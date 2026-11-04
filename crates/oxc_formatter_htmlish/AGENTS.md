@@ -20,9 +20,22 @@ a dialect adds a field there, not a `Dialect` check at the use site.
 ### Embedded languages
 
 Content in another language goes to the session's dispatcher (`src/print/embed.rs`), and prints as written where it is not formatted:
-`<script>` / `<style>` bodies, `style` / `on*` values.
+`<script>` / `<style>` bodies, `style` / `on*` values, and in Vue (`src/print/vue.rs`) `{{ }}`, directive values and the blocks that are no markup.
+Vue's JS is a part in the file's script language, named by `JsInVueTemplate`, which the host translates into JS's `JsRoot` and `JsEmbeddedIn`.
 An attribute's value is laid out by its language, in the layout its marker names (JS's `JsRoot`, CSS's `CssEmbeddedIn`):
 this crate only quotes it (`write_quoted`: the `"`, `&quot;` for a `"` in it, a group), and knows nothing of the language's syntax.
+
+#### What Vue reads
+
+The output compiles as the input does, a template that does not compile included.
+The oracle is `@vue/compiler-sfc`, which compiles every `.vue` file (`@vue/compiler-dom`'s Node build);
+the browser build, which reads some code otherwise (`isFnExpression` is a regex there), is none: it compiles in-DOM templates, no `.vue` file.
+
+- A part keeps what Vue reads by a print rule where one exists (a handler's `;`, parens, the value on its own lines before the quote)
+  - What Vue reads wins over the options: under `semi: false`, a `;` still joins a handler's statements, a guard for Vue as the ASI guard is for JS
+- Where none does, or where the formatter cannot tell, it prints as written (`v-pre`, a top-level sequence, a line comment no line break closes)
+- Which reading a part has is its `JsInVueTemplate`, translated by the host into JS's markers, whose contract is `oxc_formatter`'s AGENTS.md "js-in-xxx"
+- Otherwise Prettier is matched; where its output compiles otherwise, the divergence is `semantics` (`apps/oxfmt/DIVERGENCES.md`)
 
 ### Preprocess
 

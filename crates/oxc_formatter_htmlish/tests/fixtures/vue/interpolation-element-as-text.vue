@@ -1,0 +1,15 @@
+<template>
+  <div class="text">
+    Sorry, we couldn’t find an account for <b>{{ phoneInput }}</b>, let's create one:
+  </div>
+  <div class="text">
+    Sorry, we couldn’t find an account for <b>phoneInputAAAA</b>, let's create one:
+  </div>
+  <span>
+    <NuxtLink class="relative z-10 hover:text-accent-fallback transition-colors duration-200">{{ maintainer.username || maintainer.name }}</NuxtLink><span v-if="idx < Math.min(pkg.maintainers.length, 3) - 1">, </span>
+  </span>
+  <template #replacement>
+    <span v-else><code>{{ replacement.id }}</code></span>
+    <span v-else><code>replacementId</code></span>
+  </template>
+</template>
