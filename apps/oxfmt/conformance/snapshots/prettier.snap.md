@@ -687,19 +687,26 @@
 
 ## vue
 
-175/184 (95.11%)
+173/184 (94.02%)
 
 ### Failed
 
-- externals/prettier/vue/bracket-same-line/vue.html (💥💥, 98.22%)
-  - ❓unclassified
-- externals/prettier/vue/html-vue/elastic-header.html (💥, 99.18%)
-  - ❓unclassified
-- externals/prettier/vue/html-vue/hello-world.html (💥, 95.45%)
-  - ❓unclassified
-- externals/prettier/vue/html-vue/upper-case-2.html (💥, 90.91%)
-  - ❓unclassified
-- externals/prettier/vue/html-vue/upper-case-html-tag-2.html (💥, 88.89%)
-  - ❓unclassified
-- externals/prettier/vue/vue/template-dom.html (💥💥💥, 88.89%)
-  - ❓unclassified
+- externals/prettier/vue/event-binding/assignment.vue (💥, 55.88%)
+  - apps/oxfmt/DIVERGENCES.md#js-in-vue-handler-statements
+- externals/prettier/vue/event-binding/function-expression-ts.vue (💥, 64.29%)
+  - apps/oxfmt/DIVERGENCES.md#js-in-vue-handler-statements
+- externals/prettier/vue/html-vue/upper-case-2.html (💥, 81.82%)
+  - crates/oxc_formatter_htmlish/DIVERGENCES.md#tag-name-case
+- externals/prettier/vue/html-vue/upper-case-html-tag-2.html (💥, 77.78%)
+  - crates/oxc_formatter_htmlish/DIVERGENCES.md#tag-name-case
+- externals/prettier/vue/html-vue/upper-case-html-tag-3.html (💥, 50.00%)
+  - crates/oxc_formatter_htmlish/DIVERGENCES.md#tag-name-case
+- externals/prettier/vue/html-vue/upper-case-html-tag-4.html (💥, 75.00%)
+  - crates/oxc_formatter_htmlish/DIVERGENCES.md#tag-name-case
+- externals/prettier/vue/html-vue/upper-case-html-tag.html (💥, 50.00%)
+  - crates/oxc_formatter_htmlish/DIVERGENCES.md#tag-name-case
+- externals/prettier/vue/multiparser/snippet: non-space (💥, 0.00%)
+  - crates/oxc_formatter_htmlish/DIVERGENCES.md#vue-block-unicode-whitespace
+- externals/prettier/vue/vue/attributes.vue (💥💥💥, 98.47%)
+  - apps/oxfmt/DIVERGENCES.md#js-in-vue-handler-statements
+  - apps/oxfmt/DIVERGENCES.md#js-in-vue-trailing-line-comment

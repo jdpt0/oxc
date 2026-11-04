@@ -30,6 +30,410 @@ A ts-in-vue script formats exactly like plain `.ts`: the disambiguating trailing
 required where JSX is possible (`.tsx`, `.mts`/`.cts`). Prettier keeps it in ts-in-xxx embeds but removes it
 in ts-in-md and plain `.ts` — one rule over that internal inconsistency, the same one css-in-js and gql-in-js follow.
 
+## js-in-vue-for-alias-as-written
+
+- Why: uniform-rule (same construct, same output: a default value or a comment in `v-slot`'s params)
+- Pin: `conformance/fixtures/edge-cases/js-in-vue/for-alias-commas.vue`
+
+```vue
+<!-- input -->
+<template>
+  <li v-for="(item = 'a, b', i) in items">x</li>
+  <li v-for="(item /* a, b */, i) in items">x</li>
+</template>
+
+<!-- ours -->
+<template>
+  <li v-for="(item = 'a, b', i) in items">x</li>
+  <li v-for="(item /* a, b */, i) in items">x</li>
+</template>
+
+<!-- prettier -->
+<template>
+  <li v-for="(item = 'a,b', i) in items">x</li>
+  <li v-for="(item /* a,b */, i) in items">x</li>
+</template>
+```
+
+`v-for`'s alias formats as the params it is, its strings and comments as written, as `v-slot`'s do.
+Prettier splits it at its last commas as Vue does, and joins the trimmed parts with `,`, which drops the spaces around a comma in a string or a comment.
+Vue splits there too, and compiles neither (`@vue/compiler-dom` 3.5.45: `Error parsing JavaScript expression`).
+
+## js-in-vue-handler-statements
+
+- Why: semantics (Vue reads an event handler holding a `;` as statements, and one without as an expression; prettier/prettier#14270)
+- Pin: `conformance/fixtures/edge-cases/js-in-vue/handler-statements-semi-false.vue`
+- Conformance:
+  - `edge-cases/js-in-vue/handler-lone-statement.vue`
+  - `externals/prettier/vue/event-binding/assignment.vue`
+  - `externals/prettier/vue/event-binding/function-expression-ts.vue`
+  - `externals/prettier/vue/vue/attributes.vue`
+
+```vue
+<!-- input (semi: false) -->
+<template>
+  <button @click="count++; if (a) { b(); c() }"></button>
+</template>
+
+<!-- ours -->
+<template>
+  <button
+    @click="
+      count++;
+      if (a) {
+        b()
+        c()
+      }
+    "
+  ></button>
+</template>
+
+<!-- prettier -->
+<template>
+  <button
+    @click="
+      count++
+      if (a) {
+        b()
+        c()
+      }
+    "
+  ></button>
+</template>
+```
+
+Under `semi: false`, `;` still separates an event handler's top-level statements, all but after the last,
+and ends a lone one that is no expression (`if (a) b();`); the statements in them follow `semi`.
+Vue's compiler reads a handler as statements when its value holds a `;` (`exp.content.includes(';')`), wrapped in braces, and as an expression otherwise:
+Prettier drops every `;`, and the statements no longer compile (`@vue/compiler-dom` 3.5.45: `Error parsing JavaScript expression`).
+Under `semi: true` both print every `;` between and after the statements.
+
+```vue
+<!-- input (any semi) -->
+<button @click="a();" @focus="if (a) b()"></button>
+
+<!-- ours -->
+<button @click="a();" @focus="if (a) b()"></button>
+
+<!-- prettier -->
+<button @click="a()" @focus="if (a) b();"></button>
+```
+
+A lone expression keeps or drops its `;` as written:
+Vue reads `a();` as statements, which return nothing, and `a()` as an expression, which returns its value
+(a promise it rejects reaches `app.config.errorHandler` only then).
+Statements without a `;` print as written: Vue reads them as an expression, which does not compile, and the `;` Prettier adds makes them compile.
+
+```vue
+<!-- input (any semi) -->
+<button @focus="; /* c */"></button>
+
+<!-- ours -->
+<button @focus="; /* c */"></button>
+
+<!-- prettier -->
+<button @focus="/* c */"></button>
+```
+
+A handler of nothing but comments and `;` prints as written: without its `;`, Vue reads the comment as an expression, which does not compile.
+
+```vue
+<!-- input -->
+<button @keyup="function () { return 1 }"></button>
+<button @keyup="({ a() { b(); c() } }).a()"></button>
+
+<!-- ours -->
+<button
+  @keyup="
+    (function () {
+      return 1;
+    })
+  "
+></button>
+<button
+  @keyup="
+    ({
+      a() {
+        b();
+        c();
+      },
+    }).a()
+  "
+></button>
+
+<!-- prettier -->
+<button
+  @keyup="
+    function () {
+      return 1;
+    }
+  "
+></button>
+<button
+  @keyup="
+    {
+      a() {
+        b();
+        c();
+      },
+    }.a()
+  "
+></button>
+```
+
+A handler expression starts a statement, as an expression statement does: a leading `function`, `{`, `class` or `let[`, and an object pattern's assignment, print in parens.
+Its bodies may print a `;` (`return 1;`), and Vue reads statements there:
+a `function` begins a declaration (one without a name does not compile, a named one declares a function the click never calls),
+and a `{` a block. Prettier drops the parens, and the handler no longer compiles.
+An arrow function reads as itself either way.
+A handler whose code holds a `;` already and starts so (`function () { a(); }`) prints as written:
+Vue reads it as statements, which do not compile, and the parens would make it compile.
+
+## tsx-in-vue-template-expressions
+
+- Why: uniform-rule (same construct, same output: a template expression of a `lang="ts"` file, which Prettier parses as TS)
+- Pin: `conformance/fixtures/edge-cases/js-in-vue/template-expression-tsx.vue`
+
+```vue
+<!-- input -->
+<script setup lang="tsx">
+const a = <div />;
+</script>
+
+<template>
+  <p>{{ (value  as  Item).name }}</p>
+</template>
+
+<!-- ours -->
+<script setup lang="tsx">
+const a = <div />;
+</script>
+
+<template>
+  <p>{{ (value as Item).name }}</p>
+</template>
+
+<!-- prettier -->
+<script setup lang="tsx">
+const a = <div />;
+</script>
+
+<template>
+  <p>{{ (value  as  Item).name }}</p>
+</template>
+```
+
+A Vue file whose `<script>` is TSX has its template expressions parsed as TSX, as Vue's compiler reads them (`lang === 'ts' || lang === 'tsx'`).
+Prettier parses them as TS only for `lang="ts"`, and as JS for `lang="tsx"`, so it leaves TS syntax there as written.
+
+## js-in-vue-tailwind-functions
+
+- Why: uniform-rule (same construct, same output: a `tailwindFunctions` call in a `<script>`, and in `v-if` of a JS file)
+- Pin: `test/api/js-in-vue.test.ts` ("should sort tailwindcss functions in every .vue template expression")
+
+```vue
+<!-- input: { sortTailwindcss: { functions: ["clsx"] } } -->
+<script setup lang="ts">
+const a = clsx("p-4 flex");
+</script>
+
+<template>
+  <p v-if="clsx('p-4 flex')">{{ clsx("p-4 flex") }}</p>
+  <p :title="clsx('p-4 flex')" @click="f(clsx('p-4 flex'))" />
+</template>
+
+<!-- ours -->
+<script setup lang="ts">
+const a = clsx("flex p-4");
+</script>
+
+<template>
+  <p v-if="clsx('flex p-4')">{{ clsx("flex p-4") }}</p>
+  <p :title="clsx('flex p-4')" @click="f(clsx('flex p-4'))" />
+</template>
+
+<!-- prettier (prettier-plugin-tailwindcss) -->
+<script setup lang="ts">
+const a = clsx("flex p-4");
+</script>
+
+<template>
+  <p v-if="clsx('p-4 flex')">{{ clsx("p-4 flex") }}</p>
+  <p :title="clsx('p-4 flex')" @click="f(clsx('p-4 flex'))" />
+</template>
+```
+
+A listed function's classes sort in every template expression, as in the file's `<script>`.
+prettier-plugin-tailwindcss sorts them only in some, by which parser Prettier picks:
+`v-if`, an `@click` expression and `v-for` of a JS file, none in a TS file.
+What the attributes sort (`class`, `:class`, a listed `attributes`) is the same.
+The pin is an API test: the conformance runners run no Tailwind sorter.
+
+## js-in-vue-trailing-line-comment
+
+- Why: semantics (Prettier's output adds the comment's words as attributes of the element)
+- Pin: `conformance/fixtures/edge-cases/js-in-vue/trailing-line-comment.vue`
+- Conformance:
+  - `externals/prettier/vue/vue/attributes.vue`
+
+```vue
+<!-- input -->
+<template>
+  <li v-for="item   in items // c">x</li>
+  <a :a="{ b } // c" :b="x  +  y // c" />
+  <p>{{ a  +  b // c }}</p>
+</template>
+
+<!-- ours -->
+<template>
+  <li v-for="item   in items // c">x</li>
+  <a :a="{ b } // c" :b="x  +  y // c" />
+  <p>{{ a  +  b // c }}</p>
+</template>
+
+<!-- prettier -->
+<template>
+  <li
+    v-for="item in items" // c
+  >
+    x
+  </li>
+  <a
+    :a="{ b }" // c
+    :b="
+      x + y // c
+    "
+  />
+  <p>
+    {{
+      a + b // c
+    }}
+  </p>
+</template>
+```
+
+A Vue `{{ }}` or directive value whose code ends in a line comment keeps what Vue reads of it:
+Vue puts the code in its output up to the value's end, so the comment comments out what follows there,
+unless a line break closes it first (`@vue/compiler-dom` 3.5.45 fails to compile `:a="b // c"`, and compiles `:a="b // c⏎"`).
+- Closed by a line break the value ends with, the value is formatted on its own lines, the comment closed before the quote;
+  so is one other comments follow (`{ b } // c⏎/* d */`).
+- Not closed, it prints as written. So does every `{{ }}` and `v-for`'s source, whose code Vue trims first,
+  and `v-for`'s alias, whose comment would move past `in` and the source.
+
+A comment followed by more code (`{ a, // c⏎ b }`) is formatted as anywhere.
+Prettier prints a comment that ends a value hugging the quotes (an object, `v-for`, slot props) past the `"`,
+which Vue reads as attributes `//` and `c` (`Illegal '/' in tags`);
+it puts the others on their own lines, which makes a binding compile where it did not.
+
+## js-in-vue-top-level-sequence-as-written
+
+- Why: semantics (Vue reads a top-level `a, b` as more than one value, which the added parens make one)
+- Pin: `conformance/fixtures/edge-cases/js-in-vue/top-level-sequence.vue`
+
+```vue
+<!-- input -->
+<template>
+  <p :class="a,b" v-show="a,b">{{ a,b }}</p>
+  <p v-if="a,b" @click="a,b">{{ (a,b) }}</p>
+</template>
+
+<!-- ours -->
+<template>
+  <p :class="a,b" v-show="a,b">{{ a,b }}</p>
+  <p v-if="a,b" @click="a,b">{{ (a,b) }}</p>
+</template>
+
+<!-- prettier -->
+<template>
+  <p :class="(a, b)" v-show="(a, b)">{{ (a, b) }}</p>
+  <p v-if="(a, b)" @click="(a, b)">{{ (a, b) }}</p>
+</template>
+```
+
+A Vue `{{ }}` or directive value that is a sequence expression prints as written, in source parens too.
+Vue puts the code in its output as written (`@vue/compiler-dom` 3.5.45), where `a, b` is not one value:
+- `{{ }}`, `v-text`, `:class`, `:style` and `v-bind` pass it as two arguments (`toDisplayString(a, b)`), and use `a`;
+- `v-show` and a custom directive take `b` as the directive's argument (`[vShow, a, b]`);
+- `v-for`'s source, `v-memo`, a bound attribute and `v-html` fail (`renderList(a, b, fn)`, `{ x: a, b }`).
+
+Prettier prints it in parens, which makes it the one value `b`, or makes the code compile where it did not.
+`v-if` and an event handler, which Vue puts in parens itself, read the same either way, and print as written all the same.
+
+## js-in-vue-interpolation-in-broken-parent
+
+- Why: uniform-rule (same construct, same output: `{{ }}` in a `<div>`; prettier/prettier#11406)
+- Pin: `conformance/fixtures/edge-cases/js-in-vue/interpolation-in-broken-parent.vue`
+
+```vue
+<!-- input -->
+<template>
+  <ul>
+    {{ item }}
+  </ul>
+  <select>{{ selected }}</select>
+</template>
+
+<!-- ours -->
+<template>
+  <ul>
+    {{ item }}
+  </ul>
+  <select>
+    {{ selected }}
+  </select>
+</template>
+
+<!-- prettier -->
+<template>
+  <ul>
+    {{
+      item
+    }}
+  </ul>
+  <select>
+    {{
+      selected
+    }}
+  </select>
+</template>
+```
+
+`{{ }}` keeps its expression on its line when it fits, in an element that puts each child on its own line
+(`ul`, `ol`, `select`, `display: table*`) as in any other.
+Prettier lays out such children in the parent's group, which always breaks, so its interpolation always breaks too.
+
+## js-in-vue-object-before-double-brace
+
+- Why: semantics (Vue ends `{{ }}` at the first `}}`)
+- Pin: `test/api/js-in-vue.test.ts` ("should keep `}}` out of an interpolation without bracket spacing")
+
+```vue
+<!-- input (bracketSpacing: false) -->
+<template>
+  <p>{{ { a: { b: 1 } } }}</p>
+  <p>{{ { ...{ a: 1 } } }}</p>
+  <p>{{ { ...!{ a: 1 } } }}</p>
+</template>
+
+<!-- ours -->
+<template>
+  <p>{{ {a: ({b: 1})} }}</p>
+  <p>{{ {...({a: 1})} }}</p>
+  <p>{{ {...!({a: 1})} }}</p>
+</template>
+
+<!-- prettier -->
+<template>
+  <p>{{ {a: ({b: 1})} }}</p>
+  <p>{{ {...{a: 1}} }}</p>
+  <p>{{ {...!{a: 1}} }}</p>
+</template>
+```
+
+Under `bracketSpacing: false`, an object that would print right before another's `}` prints in parens in `{{ }}`, a spread's argument too:
+Vue's tokenizer ends the interpolation at the first `}}`, so `{{ {...{a: 1}} }}` no longer compiles (`@vue/compiler-dom` 3.5.45: `Error parsing JavaScript expression`).
+Prettier does it for a property's value only.
+
 ## styled-extend-tag
 
 - Why: cost

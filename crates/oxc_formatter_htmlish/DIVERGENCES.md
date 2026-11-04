@@ -468,8 +468,10 @@ Where that layout stays for other reasons, Prettier's first pass is stable and d
 
 ## text-display-width
 
-- Why: uniform-rule (text width is the display width; `oxc_formatter_core`'s FORMATTER_POLICY.md "Text width"; prettier/prettier#20081)
+- Why: uniform-rule (text width is the display width; `oxc_formatter_core`'s FORMATTER_POLICY.md "Text width"; prettier/prettier#20081, prettier/prettier#20381)
 - Pin: `tests/fixtures/html/text-display-width.html`
+- Conformance:
+  - `externals/vue-vben-admin/effects/layouts/src/authentication/icons/slogan.vue`
 
 ```html
 <!-- input (print width 80; `{60 × U+00A0 U+200C}` stands for the characters) -->
@@ -484,9 +486,28 @@ Where that layout stays for other reasons, Prettier's first pass is stable and d
 </div>
 ```
 
+```html
+<!-- input (print width 100; `⇥` stands for a tab) -->
+<svg><polygon fill="url(#SVGID_59_)" points="0,7.3 6.3,10.9 6.3,3.7 0,0 ⇥⇥⇥⇥⇥⇥⇥⇥" /></svg>
+
+<!-- ours -->
+<svg>
+  <polygon
+    fill="url(#SVGID_59_)"
+    points="0,7.3 6.3,10.9 6.3,3.7 0,0 ⇥⇥⇥⇥⇥⇥⇥⇥"
+  />
+</svg>
+
+<!-- prettier -->
+<svg>
+  <polygon fill="url(#SVGID_59_)" points="0,7.3 6.3,10.9 6.3,3.7 0,0 ⇥⇥⇥⇥⇥⇥⇥⇥" />
+</svg>
+```
+
 Zero-width characters count as 0 toward the print width, so the text fits next to its tags.
 Prettier counts the format characters (`U+200B..U+200F`, `U+FEFF`) as 1 and breaks.
 An email template pads its preview text this way, NBSP alternating with zero-width characters.
+A tab counts as `tabWidth`, where Prettier counts it as 0, so an attribute value padded with tabs breaks the tag.
 
 ## unclosed-at-end
 
@@ -591,6 +612,12 @@ a `pre` left open at the end loses its content to a stray `>`.
 
 - Why: semantics (consumers other than an HTML parser tell names apart by case; prettier/prettier#16898)
 - Pin: `tests/fixtures/html/tag-name-case.xhtml`
+- Conformance:
+  - `externals/prettier/vue/html-vue/upper-case-2.html`
+  - `externals/prettier/vue/html-vue/upper-case-html-tag.html`
+  - `externals/prettier/vue/html-vue/upper-case-html-tag-2.html`
+  - `externals/prettier/vue/html-vue/upper-case-html-tag-3.html`
+  - `externals/prettier/vue/html-vue/upper-case-html-tag-4.html`
 
 ```html
 <!-- input (an .xhtml file) -->
@@ -621,7 +648,9 @@ Prettier lowercases them in embedded HTML and XHTML too, by the language alone:
 - a code block labelled `html` often holds a template of another language (a Vue `<Button>`);
 - an XML parser reads XHTML's names case-sensitively.
 
-Vue and Angular keep every name as written, as Prettier does.
+Vue and Angular keep every name as written.
+Prettier does too, but in a Vue file read as HTML (a root `<html>` or `<!doctype html>`), which it lowercases as HTML:
+its reader is still Vue's SFC compiler, which reads a root `<HTML>` as a custom block by its name as written.
 
 ## known-attribute-names
 
@@ -809,6 +838,114 @@ a line break stays a line break and a same-line space stays a space that never b
 Vue's compiler drops whitespace containing a line break between elements and condenses the rest to a space,
 so Prettier's output renders `universal reactive()` (a space the source did not render) and `hereand` (losing one).
 Where the render layer ignores the gap (next to a block), and at text edges, the layout is Prettier's.
+
+## interpolation-element-as-text
+
+- Why: uniform-rule (same construct, same output: an inline element holding text; prettier/prettier#20134)
+- Pin: `tests/fixtures/vue/interpolation-element-as-text.vue`
+
+```vue
+<!-- input -->
+<template>
+  <div class="text">
+    Sorry, we couldn’t find an account for <b>{{ phoneInput }}</b>, let's create one:
+  </div>
+  <template #replacement>
+    <span v-else><code>{{ replacement.id }}</code></span>
+  </template>
+</template>
+
+<!-- ours -->
+<template>
+  <div class="text">
+    Sorry, we couldn’t find an account for <b>{{ phoneInput }}</b>, let's create
+    one:
+  </div>
+  <template #replacement>
+    <span v-else><code>{{ replacement.id }}</code></span>
+  </template>
+</template>
+
+<!-- prettier -->
+<template>
+  <div class="text">
+    Sorry, we couldn’t find an account for <b>{{ phoneInput }}</b
+    >, let's create one:
+  </div>
+  <template #replacement>
+    <span v-else
+      ><code>{{ replacement.id }}</code></span
+    >
+  </template>
+</template>
+```
+
+An inline element holding only `{{ }}` lays out with what is around it as one holding text (`<b>phoneInput</b>`):
+its closing `>` stays with the text right after it, and the line breaks in the text;
+and it puts no element holding it on lines of its own, as nested markup does.
+Counted as markup, it would break an inline parent where only a borrowed `>` can (`<span v-else` then `><code>` on the next line), as Prettier `main` still does.
+Inside it, `{{ }}` hugs the tags and breaks within, as Prettier does: a word cannot.
+Prettier does both for `{{ }}`, not for text.
+Prettier `main` keeps the `>` with the text after it (prettier/prettier#20134), which we follow,
+and with an element after it too (`</a><span`), where an element holding text breaks at the `>`: there we stay on the pin.
+
+What text does that `{{ }}` cannot is kept as at the pin:
+glued to words on both sides without attributes (`(<b>x</b>)`), an element holding text is one word with them,
+while `{{ }}` is formatted, so it stays an element that breaks at the `>` (or inside the `{{ }}`).
+
+## vue-v-pre-as-written
+
+- Why: semantics (Vue renders a `v-pre` element and its content as written)
+- Pin: `tests/fixtures/vue/vue-v-pre-as-written.vue`
+
+```vue
+<!-- input -->
+<template>
+  <div v-pre :a="b+c">{{a+b}} <span @click="x+y">{{c}}</span></div>
+</template>
+
+<!-- ours -->
+<template>
+  <div v-pre :a="b+c">{{a+b}} <span @click="x+y">{{c}}</span></div>
+</template>
+
+<!-- prettier -->
+<template>
+  <div v-pre :a="b + c">
+    {{ a + b }} <span @click="x + y">{{ c }}</span>
+  </div>
+</template>
+```
+
+In a `v-pre` element and its content, `{{ }}` is text and a directive a plain attribute, as Vue's compiler reads them:
+they print as written, and lay out as text and attributes do.
+Prettier formats them, which changes what renders (`{{ a + b }}`) and the attribute values (`:a` is `b + c`), as `@vue/compiler-dom` 3.5.45 compiles them.
+
+## vue-block-unicode-whitespace
+
+- Why: semantics (a Markdown paragraph of a non-ASCII space renders)
+- Pin: `tests/fixtures/vue/vue-block-unicode-whitespace.vue`
+- Conformance:
+  - `externals/prettier/vue/multiparser/snippet: non-space`
+
+```vue
+<!-- input (`␣` stands for U+2005) -->
+<custom lang="markdown">
+ ␣ 
+</custom>
+
+<!-- ours -->
+<custom lang="markdown">
+ ␣
+</custom>
+
+<!-- prettier -->
+<custom lang="markdown"></custom>
+```
+
+A Vue block's content is empty when it holds only ASCII whitespace, as the parser reads any text (NBSP is content);
+the block's language formats the rest.
+Prettier empties it when it holds only JS whitespace (`/^\s*$/`), and drops a character its language reads.
 
 ## angular-glued-block-markers
 
