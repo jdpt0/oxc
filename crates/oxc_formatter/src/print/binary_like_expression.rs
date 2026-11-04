@@ -55,6 +55,29 @@ impl BinaryLikeOperator {
     }
 }
 
+impl BinaryLikeExpression<'_, '_> {
+    fn is_bitwise_or(&self) -> bool {
+        matches!(self, Self::BinaryExpression(binary) if binary.operator == BinaryOperator::BitwiseOR)
+    }
+
+    /// A `|` that breaks before it: one of a chain of only `|` up to an embedded expression's root
+    /// (`JsFormatContext::is_embedded_root`), where the expression asks for it ([`crate::ExpressionRoot::breaks_before_bitwise_or`]).
+    fn breaks_before_operator(&self, f: &JsFormatter<'_, '_>) -> bool {
+        if !f.context().expression_root().is_some_and(|root| root.breaks_before_bitwise_or)
+            || !self.is_bitwise_or()
+        {
+            return false;
+        }
+        let mut parent = self.parent();
+        while let AstNodes::BinaryExpression(binary) = parent
+            && binary.operator == BinaryOperator::BitwiseOR
+        {
+            parent = binary.parent();
+        }
+        f.context().is_embedded_root(parent)
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum BinaryLikeExpression<'a, 'b> {
     LogicalExpression(&'b AstNode<'b, 'a, LogicalExpression<'a>>),
@@ -161,8 +184,14 @@ impl<'a, 'b> BinaryLikeExpression<'a, 'b> {
     /// There are some cases where the indentation is done by the parent, so if the parent is already doing
     /// the indentation, then there's no need to do a second indentation.
     /// [Prettier applies]: <https://github.com/prettier/prettier/blob/b0201e01ef99db799eb3716f15b7dfedb0a2e62b/src/language-js/print/binaryish.js#L122-L125>
-    pub fn should_not_indent_if_parent_indents(&self, parent: &AstNodes<'_, 'a>) -> bool {
+    pub fn should_not_indent_if_parent_indents(
+        &self,
+        parent: &AstNodes<'_, 'a>,
+        f: &JsFormatter<'_, 'a>,
+    ) -> bool {
         match parent {
+            // An embedded expression's root, which the host's delimiters indent: a `|` chain indents under them still
+            parent if f.context().is_embedded_root(parent) => !self.is_bitwise_or(),
             AstNodes::ReturnStatement(_)
             | AstNodes::ThrowStatement(_)
             | AstNodes::ForStatement(_)
@@ -248,7 +277,7 @@ impl<'a> Format<'a, JsFormatContext<'a>> for BinaryLikeExpression<'a, '_> {
         }
 
         // Check if we can take another early-exit path before building the Vec
-        let should_not_indent = self.should_not_indent_if_parent_indents(self.parent());
+        let should_not_indent = self.should_not_indent_if_parent_indents(self.parent(), f);
 
         // Optimize: if should_not_indent is true, we can skip building the Vec entirely
         if should_not_indent {
@@ -359,6 +388,9 @@ enum BinaryLeftOrRightSide<'a, 'b> {
         parent: BinaryLikeExpression<'a, 'b>,
         /// Is the parent the condition of a `if` / `while` / `do-while` / `for` statement?
         inside_condition: bool,
+        /// The operator breaks before it ([`BinaryLikeExpression::breaks_before_operator`]),
+        /// the same for every operator of a flattened chain, so it is decided once for it.
+        breaks_before_operator: bool,
     },
 }
 
@@ -381,14 +413,25 @@ fn format_flattened_logical_expression<'a>(
     write!(f, [group(&current.left())]);
 
     // Format the right sides with operator, from the innermost one back up `depth` levels to `binary`
-    BinaryLeftOrRightSide::Right { parent: current, inside_condition }.fmt(f);
+    // A logical chain has no `|`
+    BinaryLeftOrRightSide::Right {
+        parent: current,
+        inside_condition,
+        breaks_before_operator: false,
+    }
+    .fmt(f);
     for _ in 0..depth {
         current = match current.parent() {
             AstNodes::LogicalExpression(expr) => BinaryLikeExpression::LogicalExpression(expr),
             AstNodes::BinaryExpression(expr) => BinaryLikeExpression::BinaryExpression(expr),
             _ => unreachable!(),
         };
-        BinaryLeftOrRightSide::Right { parent: current, inside_condition }.fmt(f);
+        BinaryLeftOrRightSide::Right {
+            parent: current,
+            inside_condition,
+            breaks_before_operator: false,
+        }
+        .fmt(f);
     }
 }
 
@@ -399,6 +442,7 @@ impl<'a> Format<'a, JsFormatContext<'a>> for BinaryLeftOrRightSide<'a, '_> {
             Self::Right {
                 parent: binary_like_expression,
                 inside_condition: inside_parenthesis,
+                breaks_before_operator,
             } => {
                 let mut binary_like_expression = *binary_like_expression;
                 // // It's only possible to suppress the formatting of the whole binary expression formatting OR
@@ -447,7 +491,12 @@ impl<'a> Format<'a, JsFormatContext<'a>> for BinaryLeftOrRightSide<'a, '_> {
                         // A type cast keeps its parens: `a && /** @type {T} */ (b && c)`
                         && !is_cast_target(right_logical.span(), f)
                     {
-                        format_operator_and_break(operator.into(), right_logical.left().span(), f);
+                        format_operator_and_break(
+                            operator.into(),
+                            right_logical.left().span(),
+                            false,
+                            f,
+                        );
 
                         // If the left side of the right logical expression is still a logical expression with the same operator,
                         // we need to recursively format it inline.
@@ -491,6 +540,7 @@ impl<'a> Format<'a, JsFormatContext<'a>> for BinaryLeftOrRightSide<'a, '_> {
                         format_operator_and_break(
                             binary_like_expression.operator(),
                             right.span(),
+                            *breaks_before_operator,
                             f,
                         );
                     }
@@ -588,9 +638,14 @@ fn split_into_left_and_right_sides<'a, 'b>(
     // (rather than nested as they appear in the tree), walking down the left sides in reverse order.
     // `with_capacity(2)` because we expect at least 2 items (left and right).
     let mut items = Vec::with_capacity(2);
+    let breaks_before_operator = binary.breaks_before_operator(f);
 
     loop {
-        items.push(BinaryLeftOrRightSide::Right { parent: binary, inside_condition });
+        items.push(BinaryLeftOrRightSide::Right {
+            parent: binary,
+            inside_condition,
+            breaks_before_operator,
+        });
 
         if !binary.can_flatten(f) {
             break;
@@ -613,12 +668,15 @@ fn split_into_left_and_right_sides<'a, 'b>(
 /// If `operatorPosition: start`, `<soft break><operator><space>`: with the operand's leading own-line comments hoisted above the operator.
 /// NOTE: Prettier additionally emits a stray second space before the previous operand's flushed trailing line comment
 /// (`prev  // comment`), but we don't.
+/// `line_before`: the operator starts the line whatever `experimentalOperatorPosition` says
+/// ([`BinaryLikeExpression::breaks_before_operator`]).
 fn format_operator_and_break(
     operator: BinaryLikeOperator,
     operand_span: Span,
+    line_before: bool,
     f: &mut JsFormatter<'_, '_>,
 ) {
-    if f.options().operator_position.is_end() {
+    if f.options().operator_position.is_end() && !line_before {
         write!(f, [space(), operator, soft_line_break_or_space()]);
     } else {
         write!(

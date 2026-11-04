@@ -2,7 +2,7 @@
 //! (host-delegated services travel as `SessionServices` on the `FormatSession` instead).
 //!
 //! With JS as the parent, JS picks the child language and passes the pair's own data.
-//! With JS as the child of a parent that cannot pick (a Markdown code block),
+//! With JS as the child of a parent that cannot pick (a Markdown code block, a template language),
 //! the host translates the parent's fact about itself into the pair's data ([`JsRoot`], [`JsEmbeddedIn`]).
 //!
 //! NOTE: These live here permanently, NOT in other formatter crate:
@@ -63,6 +63,8 @@ pub struct HtmlInJsTemplate {
 pub enum JsRoot {
     /// Statements (a `<script>`'s, a Markdown code block's, an event handler attribute's).
     Program { semicolons: ProgramSemicolons, layout: ProgramLayout },
+    /// An expression (Vue `{{ a }}`, `:a="b"`).
+    Expression(ExpressionRoot),
 }
 
 /// How a program's top-level statements end.
@@ -72,8 +74,15 @@ pub enum ProgramSemicolons {
     AsOptions,
     /// A lone JSX expression statement prints without its `;` (a Markdown code block shows a JSX snippet).
     LoneJsxOmitted,
-    /// A lone expression statement prints without its `;` (an event handler attribute, a function's body).
+    /// A lone expression statement prints without its `;` (an event handler attribute).
     LoneExpressionOmitted,
+    /// `;` tells statements from an expression: the host reads code holding one as statements,
+    /// other code as an expression it calls or evaluates (Vue's `@click`).
+    ///
+    /// A lone expression statement keeps or omits its `;` as the source has it, whatever `semi` says:
+    /// the host reads it otherwise without it (Vue `foo;` runs nothing, `foo` calls it; `a();` returns nothing, `a()` its value).
+    /// Under `semi: false`, `;` still separates statements, but after the last, and ends a lone one that is no expression.
+    MarksStatements,
 }
 
 /// How a program's statements lay out.
@@ -85,12 +94,45 @@ pub enum ProgramLayout {
     Indented,
 }
 
+/// How an expression prints.
+#[derive(Clone, Copy, Debug)]
+pub struct ExpressionRoot {
+    pub layout: ExpressionLayout,
+    /// A top-level `|` chain breaks before each `|`, whatever `experimentalOperatorPosition` says:
+    /// the host reads it as functions applied in turn (Vue 2's filters, `a | f | g`).
+    pub breaks_before_bitwise_or: bool,
+    /// The expression holds Tailwind classes (Vue `:class`): its strings sort as in a JSX `className`.
+    pub tailwind_classes: bool,
+    /// The host ends the code at the first `}}` (Vue's `{{ }}`):
+    /// under `bracketSpacing: false`, an object that would print one prints in parens.
+    pub ends_at_double_brace: bool,
+    /// The root starts a statement: the host reads code holding a `;` as statements (Vue's `@click`), and its bodies may print one.
+    /// A leading `{`, `function`, `class` or `let[` (an object pattern's assignment too) prints in parens, as in an expression statement.
+    pub reads_as_statements: bool,
+}
+
+/// The layout an expression prints in, inside its host's delimiters.
+#[derive(Clone, Copy, Debug)]
+pub enum ExpressionLayout {
+    /// No wrapper; the host lays it out (Vue's `{{ }}`).
+    Bare,
+    /// In a group.
+    Group,
+    /// An object or an array (a string or a template literal too, with `literals`) hugs the delimiters, in a group;
+    /// another expression goes on its own indented lines when it breaks.
+    Hug { literals: bool },
+}
+
 /// What an embedded JS/TS part is embedded in: what its host does with the code.
 ///
 /// For the rules that keep what the host reads of it (see [`crate::format_to_ir`]).
-/// The default does not quote the code (a `<script>`, a Markdown code block).
+/// The default neither quotes the code nor inlines it (a `<script>`, a Markdown code block).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct JsEmbeddedIn {
     /// The code is a `"`-quoted HTML attribute's value: strings print in `'`.
     pub in_html_attribute: bool,
+    /// The host puts the code in its output as written (Vue makes a render function around it):
+    /// a line comment the code ends in must be closed by a line break,
+    /// and a top-level sequence (`a, b`), which there reads as more than one value, is left as written.
+    pub inlines_code: bool,
 }
