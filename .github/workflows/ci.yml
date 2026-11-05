@@ -402,8 +402,14 @@ jobs:
       - uses: oxc-project/setup-rust@3d6fb132fbe7cdcb66bf8ec193911c2945369d12 # v1.0.17
         if: steps.filter.outputs.changed == 'true'
         with:
-          cache-key: napi
-          save-cache: ${{ github.ref_name == 'main' }}
+          restore-cache: false
+      # Cache the Dev Drive workspace, where the packages are built.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: steps.filter.outputs.changed == 'true'
+        with:
+          workspaces: ${{ env.DEV_DRIVE_WORKSPACE }}
+          save-if: ${{ github.ref_name == 'main' }}
+          shared-key: napi-compiler-windows
       - uses: $/.github/actions/clone-submodules
         if: steps.filter.outputs.changed == 'true'
         with:
@@ -485,8 +491,13 @@ jobs:
           - uses: oxc-project/setup-rust@3d6fb132fbe7cdcb66bf8ec193911c2945369d12 # v1.0.17
             if: steps.filter.outputs.changed == 'true'
             with:
-              cache-key: napi
-              save-cache: ${{ github.ref_name == 'main' }}
+              restore-cache: false
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: steps.filter.outputs.changed == 'true'
+        with:
+          workspaces: ${{ env.DEV_DRIVE_WORKSPACE }}
+          save-if: ${{ github.ref_name == 'main' }}
+          shared-key: napi-oxlint-windows
       - name: Install dependencies on Dev Drive
         if: steps.filter.outputs.changed == 'true'
         working-directory: ${{ env.DEV_DRIVE_WORKSPACE }}
@@ -531,8 +542,13 @@ jobs:
           - uses: oxc-project/setup-rust@3d6fb132fbe7cdcb66bf8ec193911c2945369d12 # v1.0.17
             if: steps.filter.outputs.changed == 'true'
             with:
-              cache-key: napi
-              save-cache: ${{ github.ref_name == 'main' }}
+              restore-cache: false
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: steps.filter.outputs.changed == 'true'
+        with:
+          workspaces: ${{ env.DEV_DRIVE_WORKSPACE }}
+          save-if: ${{ github.ref_name == 'main' }}
+          shared-key: napi-formatter-windows
       - name: Install dependencies on Dev Drive
         if: steps.filter.outputs.changed == 'true'
         working-directory: ${{ env.DEV_DRIVE_WORKSPACE }}
